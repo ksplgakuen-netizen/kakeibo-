@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ふたりの家計簿</title>
+
+  <!-- PWA: iOS ホーム画面追加サポート -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="家計簿">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#e86fa0">
+  <link rel="apple-touch-icon" id="appleIcon">
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --pink:       #ff8fab;
+      --pink-dark:  #e86fa0;
+      --pink-light: #ffd6e7;
+      --green:      #4db6ac;
+      --green-light:#b2dfdb;
+      --bg:         #fff5f8;
+      --white:      #ffffff;
+      --text:       #3d2b35;
+      --text-light: #aaa;
+      --gray:       #f5f5f5;
+      --border:     #ffd6e7;
+      --shadow:     0 4px 18px rgba(232,111,160,.15);
+      --radius:     16px;
+    }
+    *, *::before, *::after {
+      margin: 0; padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+      background: #f0dde9;
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    #app {
+      width: 100%;
+      max-width: 400px;
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* ===== Header ===== */
+    .app-header {
+      background: linear-gradient(135deg, #d45d8a 0%, var(--pink) 100%);
+      padding: 14px 20px 14px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .app-header h1 {
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: .5px;
+      margin-bottom: 10px;
+    }
+    .month-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .month-nav button {
+      background: rgba(255,255,255,.28);
+      border: none;
+      color: #fff;
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s;
+    }
+    .month-nav button:active { background: rgba(255,255,255,.45); }
+    .month-label { font-size: 18px; font-weight: 700; }
+    .monthly-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .summary-item {
+      background: rgba(255,255,255,.22);
+      border-radius: 12px;
+      padding: 8px 6px;
+      text-align: center;
+    }
+    .summary-item .s-label { font-size: 10px; opacity: .88; }
+    .summary-item .s-value { font-size: 14px; font-weight: 700; margin-top: 3px; }
+
+    /* sub-header for stats/settings */
+    .sub-header {
+      display: none;
+      background: linear-gradient(135deg, #d45d8a 0%, var(--pink) 100%);
+      padding: 16px 20px;
+      color: #fff;
+      font-size: 17px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    /* ===== Tab content ===== */
+    .tab-content {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 72px;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ===== Calendar ===== */
+    .calendar-grid { padding: 10px 10px 4px; }
+    .day-labels {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 3px;
+      margin-bottom: 4px;
+    }
+    .day-label {
+      text-align: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-light);
+      padding: 3px 0;
+    }
+    .calendar-cells {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 3px;
+    }
+    .cal-cell {
+      background: var(--white);
+      border-radius: 10px;
+      padding: 5px 4px 4px;
+      min-height: 64px;
+      cursor: pointer;
+      transition: transform .12s;
+      border: 2px solid transparent;
+    }
+    .cal-cell:active { transform: scale(.94); }
+    .cal-cell.other-month { background: rgba(255,255,255,.45); opacity: .55; }
+    .cal-cell.today { border-color: var(--pink); }
+    .cal-cell.selected { border-color: var(--pink-dark); background: var(--pink-light); }
+    .cal-cell .day-num {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+    .cal-cell.other-month .day-num { color: var(--text-light) !important; }
+    .cal-amount {
+      display: block;
+      font-size: 9px;
+      font-weight: 600;
+      border-radius: 4px;
+      padding: 1px 3px;
+      margin-top: 2px;
+      line-height: 1.3;
+    }
+    .cal-amount.expense { color: var(--pink-dark); background: rgba(232,111,160,.1); }
+    .cal-amount.income  { color: var(--green);     background: rgba(77,182,172,.1); }
+
+    /* ===== Day detail ===== */
+    .day-detail {
+      display: none;
+      padding: 12px 12px 4px;
+      border-top: 2px solid var(--pink-light);
+      margin-top: 4px;
+    }
+    .day-detail.active { display: block; }
+    .day-detail-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .day-detail-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--pink-dark);
+    }
+    .btn-add {
+      background: linear-gradient(135deg, var(--pink-dark), var(--pink));
+      color: #fff;
+      border: none;
+      border-radius: 20px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-add:active { opacity: .82; }
+    .entry-list { display: flex; flex-direction: column; gap: 8px; }
+    .entry-item {
+      background: var(--white);
+      border-radius: 13px;
+      padding: 12px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow);
+    }
+    .entry-left { display: flex; align-items: center; gap: 10px; }
+    .entry-icon {
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px;
+      flex-shrink: 0;
+    }
+    .entry-icon.expense { background: var(--pink-light); }
+    .entry-icon.income  { background: var(--green-light); }
+    .entry-info .e-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .entry-info .e-meta {
+      font-size: 11px;
+      color: var(--text-light);
+      margin-top: 2px;
+    }
+    .entry-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 5px;
+      margin-left: 6px;
+    }
+    .entry-amount {
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .entry-amount.expense { color: var(--pink-dark); }
+    .entry-amount.income  { color: var(--green); }
+    .entry-who {
+      font-size: 10px;
+      background: var(--pink-light);
+      color: var(--pink-dark);
+      padding: 2px 8px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
+    .btn-delete {
+      background: none; border: none;
+      color: var(--text-light);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px 6px;
+      margin-left: 4px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .btn-delete:active { background: var(--pink-light); }
+    .empty-state {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-light);
+      font-size: 13px;
+    }
+
+    /* ===== Stats ===== */
+    .stats-panel { padding: 12px; }
+    .stats-card {
+      background: var(--white);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: var(--shadow);
+    }
+    .stats-card h3 {
+      font-size: 13px;
+      color: var(--text-light);
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+    .stats-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+    .stats-item { text-align: center; }
+    .stats-item .s2-label { font-size: 11px; color: var(--text-light); }
+    .stats-item .s2-value { font-size: 15px; font-weight: 700; margin-top: 4px; }
+    .s2-value.expense { color: var(--pink-dark); }
+    .s2-value.income  { color: var(--green); }
+    .s2-value.balance { color: var(--text); }
+    .budget-bar-wrap { margin-top: 8px; }
+    .budget-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-light);
+      margin-bottom: 6px;
+    }
+    .budget-bar {
+      background: var(--gray);
+      border-radius: 8px;
+      height: 14px;
+      overflow: hidden;
+    }
+    .budget-bar-fill {
+      height: 100%;
+      border-radius: 8px;
+      transition: width .5s ease;
+    }
+    .budget-pct {
+      text-align: right;
+      font-size: 11px;
+      color: var(--text-light);
+      margin-top: 4px;
+    }
+    .chart-container { position: relative; height: 220px; }
+
+    /* ===== Settings ===== */
+    .settings-panel { padding: 12px; }
+    .settings-card {
+      background: var(--white);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: var(--shadow);
+    }
+    .settings-card h3 {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--pink-dark);
+      margin-bottom: 14px;
+    }
+    .settings-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 10px;
+    }
+    .settings-row label {
+      font-size: 13px;
+      color: var(--text);
+      width: 52px;
+      flex-shrink: 0;
+    }
+    .settings-row input {
+      flex: 1;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      outline: none;
+      color: var(--text);
+      background: var(--white);
+    }
+    .settings-row input:focus { border-color: var(--pink); }
+    .btn-save {
+      width: 100%;
+      background: linear-gradient(135deg, var(--pink-dark), var(--pink));
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .btn-save:active { opacity: .82; }
+    .btn-danger {
+      background: linear-gradient(135deg, #c0392b, #e74c3c);
+    }
+    .btn-neutral {
+      background: linear-gradient(135deg, #555, #777);
+    }
+    .btn-gap { margin-top: 8px; }
+
+    /* ===== Bottom Nav ===== */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 400px;
+      background: var(--white);
+      display: flex;
+      border-top: 1px solid var(--border);
+      z-index: 100;
+      box-shadow: 0 -4px 18px rgba(0,0,0,.08);
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+    .nav-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 0 8px;
+      cursor: pointer;
+      border: none;
+      background: none;
+    }
+    .nav-icon {
+      font-size: 22px;
+      margin-bottom: 2px;
+      transition: transform .15s;
+    }
+    .nav-item.active .nav-icon { transform: scale(1.18); }
+    .nav-label {
+      font-size: 10px;
+      color: var(--text-light);
+      font-weight: 500;
+    }
+    .nav-item.active .nav-label {
+      color: var(--pink-dark);
+      font-weight: 700;
+    }
+
+    /* ===== Bottom Sheet ===== */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.38);
+      z-index: 200;
+    }
+    .overlay.active { display: block; }
+    .bottom-sheet {
+      position: fixed;
+      bottom: -100%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 400px;
+      background: var(--white);
+      border-radius: 24px 24px 0 0;
+      z-index: 201;
+      transition: bottom .32s cubic-bezier(.25,.8,.25,1);
+      padding: 14px 20px calc(40px + env(safe-area-inset-bottom, 0));
+      max-height: 92vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .bottom-sheet.active { bottom: 0; }
+    .sheet-handle {
+      width: 36px; height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      margin: 0 auto 14px;
+    }
+    .sheet-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .type-toggle {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      background: var(--gray);
+      border-radius: 12px;
+      padding: 4px;
+      margin-bottom: 16px;
+    }
+    .type-btn {
+      padding: 10px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all .18s;
+      background: transparent;
+      color: var(--text-light);
+    }
+    .type-btn.active.expense { background: var(--pink-dark); color: #fff; }
+    .type-btn.active.income  { background: var(--green);     color: #fff; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-light);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 15px;
+      outline: none;
+      color: var(--text);
+      background: var(--white);
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    .form-group input:focus,
+    .form-group select:focus { border-color: var(--pink); }
+    .amount-wrap { position: relative; }
+    .amount-prefix {
+      position: absolute;
+      left: 14px; top: 50%;
+      transform: translateY(-50%);
+      font-size: 15px;
+      color: var(--text-light);
+      pointer-events: none;
+    }
+    .amount-input { padding-left: 28px !important; }
+    .who-btns { display: flex; gap: 8px; }
+    .who-btn {
+      flex: 1;
+      padding: 12px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--white);
+      color: var(--text);
+      transition: all .15s;
+    }
+    .who-btn.active {
+      border-color: var(--pink-dark);
+      background: var(--pink-light);
+      color: var(--pink-dark);
+    }
+    .btn-submit {
+      width: 100%;
+      padding: 15px;
+      background: linear-gradient(135deg, var(--pink-dark), var(--pink));
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .btn-submit:active { opacity: .85; }
+
+    /* ===== iOS ノッチ・ホームバー対応 ===== */
+    @media (display-mode: standalone) {
+      .app-header  { padding-top: calc(14px + env(safe-area-inset-top)); }
+      .sub-header  { padding-top: calc(16px + env(safe-area-inset-top)); }
+      .bottom-nav  { padding-bottom: env(safe-area-inset-bottom, 0); }
+    }
+
+    /* ===== Toast ===== */
+    .toast {
+      position: fixed;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(51,51,51,.92);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 13px;
+      z-index: 999;
+      opacity: 0;
+      transition: opacity .25s;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Calendar header -->
+  <div class="app-header" id="mainHeader">
+    <h1>💕 ふたりの家計簿</h1>
+    <div class="month-nav">
+      <button id="prevMonth">‹</button>
+      <span class="month-label" id="monthLabel"></span>
+      <button id="nextMonth">›</button>
+    </div>
+    <div class="monthly-summary">
+      <div class="summary-item">
+        <div class="s-label">収入</div>
+        <div class="s-value" id="hdrIncome">¥0</div>
+      </div>
+      <div class="summary-item">
+        <div class="s-label">支出</div>
+        <div class="s-value" id="hdrExpense">¥0</div>
+      </div>
+      <div class="summary-item">
+        <div class="s-label">残高</div>
+        <div class="s-value" id="hdrBalance">¥0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sub-header for other tabs -->
+  <div class="sub-header" id="subHeader"></div>
+
+  <!-- Tab content -->
+  <div class="tab-content">
+
+    <!-- ===== Calendar tab ===== -->
+    <div class="tab-panel active" id="tab-calendar">
+      <div class="calendar-grid">
+        <div class="day-labels">
+          <div class="day-label" style="color:#e05252">日</div>
+          <div class="day-label">月</div>
+          <div class="day-label">火</div>
+          <div class="day-label">水</div>
+          <div class="day-label">木</div>
+          <div class="day-label">金</div>
+          <div class="day-label" style="color:#5085e0">土</div>
+        </div>
+        <div class="calendar-cells" id="calendarCells"></div>
+      </div>
+
+      <div class="day-detail" id="dayDetail">
+        <div class="day-detail-header">
+          <span class="day-detail-title" id="dayDetailTitle"></span>
+          <button class="btn-add" id="btnAddEntry">＋ 追加</button>
+        </div>
+        <div class="entry-list" id="entryList"></div>
+      </div>
+    </div>
+
+    <!-- ===== Stats tab ===== -->
+    <div class="tab-panel" id="tab-stats">
+      <div class="stats-panel">
+        <div class="stats-card">
+          <h3>📊 今月のサマリー</h3>
+          <div class="stats-summary">
+            <div class="stats-item">
+              <div class="s2-label">収入</div>
+              <div class="s2-value income" id="statsIncome">¥0</div>
+            </div>
+            <div class="stats-item">
+              <div class="s2-label">支出</div>
+              <div class="s2-value expense" id="statsExpense">¥0</div>
+            </div>
+            <div class="stats-item">
+              <div class="s2-label">残高</div>
+              <div class="s2-value balance" id="statsBalance">¥0</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="stats-card">
+          <h3>💰 月間予算の使用状況</h3>
+          <div class="budget-bar-wrap">
+            <div class="budget-labels">
+              <span id="budgetUsed">¥0 使用</span>
+              <span id="budgetTotal">予算 ¥0</span>
+            </div>
+            <div class="budget-bar">
+              <div class="budget-bar-fill" id="budgetBarFill" style="width:0%"></div>
+            </div>
+            <div class="budget-pct" id="budgetPercent">0%</div>
+          </div>
+        </div>
+
+        <div class="stats-card">
+          <h3>🏷️ カテゴリ別支出</h3>
+          <div class="chart-container">
+            <canvas id="categoryChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Settings tab ===== -->
+    <div class="tab-panel" id="tab-settings">
+      <div class="settings-panel">
+
+        <div class="settings-card">
+          <h3>👤 2人の名前</h3>
+          <div class="settings-row">
+            <label>1人目</label>
+            <input type="text" id="settingName1" placeholder="さくら">
+          </div>
+          <div class="settings-row">
+            <label>2人目</label>
+            <input type="text" id="settingName2" placeholder="はると">
+          </div>
+          <button class="btn-save" id="saveNames">保存する</button>
+        </div>
+
+        <div class="settings-card">
+          <h3>💴 月間予算（支出）</h3>
+          <div class="settings-row">
+            <label>予算</label>
+            <input type="number" id="settingBudget" placeholder="200000" inputmode="numeric">
+          </div>
+          <button class="btn-save" id="saveBudget">保存する</button>
+        </div>
+
+        <div class="settings-card">
+          <h3>🗂️ データ管理</h3>
+          <button class="btn-save btn-neutral" id="btnExportData">データをエクスポート（JSON）</button>
+          <button class="btn-save btn-danger btn-gap" id="btnClearData">すべてのデータを削除</button>
+        </div>
+
+      </div>
+    </div>
+  </div><!-- /tab-content -->
+
+  <!-- Bottom Nav -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-tab="calendar">
+      <span class="nav-icon">📅</span>
+      <span class="nav-label">カレンダー</span>
+    </button>
+    <button class="nav-item" data-tab="stats">
+      <span class="nav-icon">📊</span>
+      <span class="nav-label">統計</span>
+    </button>
+    <button class="nav-item" data-tab="settings">
+      <span class="nav-icon">⚙️</span>
+      <span class="nav-label">設定</span>
+    </button>
+  </nav>
+</div><!-- /app -->
+
+<!-- Overlay -->
+<div class="overlay" id="overlay"></div>
+
+<!-- Bottom Sheet -->
+<div class="bottom-sheet" id="bottomSheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title" id="sheetTitle">収支を追加</div>
+
+  <div class="type-toggle">
+    <button class="type-btn active expense" data-type="expense">支出</button>
+    <button class="type-btn income"         data-type="income">収入</button>
+  </div>
+
+  <div class="form-group">
+    <label>金額</label>
+    <div class="amount-wrap">
+      <span class="amount-prefix">¥</span>
+      <input type="number" class="amount-input" id="inputAmount" placeholder="0" inputmode="numeric" min="0">
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>内容</label>
+    <input type="text" id="inputName" placeholder="例：スーパーで買い物">
+  </div>
+
+  <div class="form-group">
+    <label>カテゴリ</label>
+    <select id="inputCat">
+      <option value="食費">🛒 食費</option>
+      <option value="外食">🍽️ 外食</option>
+      <option value="住居">🏠 住居</option>
+      <option value="光熱費">💡 光熱費</option>
+      <option value="交通">🚃 交通</option>
+      <option value="衣服">👕 衣服</option>
+      <option value="医療">💊 医療</option>
+      <option value="娯楽">🎮 娯楽</option>
+      <option value="教育">📚 教育</option>
+      <option value="給料">💼 給料</option>
+      <option value="その他">📦 その他</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label>入力者</label>
+    <div class="who-btns" id="whoBtns">
+      <button class="who-btn active" data-who="0">さくら</button>
+      <button class="who-btn"        data-who="1">はると</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>日付</label>
+    <input type="date" id="inputDate">
+  </div>
+
+  <button class="btn-submit" id="btnSubmit">記録する 💕</button>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+// ─── Constants ───────────────────────────────────────────────
+const STORAGE_KEY = 'futari_kakeibo_v1';
+
+const CAT_ICONS = {
+  '食費':'🛒','外食':'🍽️','住居':'🏠','光熱費':'💡',
+  '交通':'🚃','衣服':'👕','医療':'💊','娯楽':'🎮',
+  '教育':'📚','給料':'💼','その他':'📦'
+};
+
+// ─── State ───────────────────────────────────────────────────
+const state = {
+  tab:          'calendar',
+  year:         new Date().getFullYear(),
+  month:        new Date().getMonth(),   // 0-indexed
+  selectedDate: null,
+  sheetType:    'expense',
+  sheetWho:     0,
+  settings: {
+    names:  ['さくら', 'はると'],
+    budget: 200000
+  },
+  entries: []   // { id, type, amount, name, cat, who, date }
+};
+
+let chartInst = null;
+
+// ─── Storage ─────────────────────────────────────────────────
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    state.entries  = Array.isArray(data.entries) ? data.entries : [];
+    state.settings = Object.assign(state.settings, data.settings || {});
+  } catch(e) { /* ignore */ }
+}
+
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    entries:  state.entries,
+    settings: state.settings
+  }));
+}
+
+// ─── Helpers ─────────────────────────────────────────────────
+function yen(n) { return '¥' + Math.abs(n).toLocaleString('ja-JP'); }
+
+function yenSigned(n) {
+  return (n >= 0 ? '+¥' : '-¥') + Math.abs(n).toLocaleString('ja-JP');
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function dateStr(y, m, d) {
+  return `${y}-${pad2(m + 1)}-${pad2(d)}`;
+}
+
+function todayStr() {
+  const t = new Date();
+  return dateStr(t.getFullYear(), t.getMonth(), t.getDate());
+}
+
+function getMonthEntries(y, m) {
+  y = y ?? state.year; m = m ?? state.month;
+  const pfx = `${y}-${pad2(m + 1)}-`;
+  return state.entries.filter(e => e.date.startsWith(pfx));
+}
+
+function getDayEntries(ds) {
+  return state.entries.filter(e => e.date === ds);
+}
+
+function calcSummary(entries) {
+  let income = 0, expense = 0;
+  entries.forEach(e => {
+    if (e.type === 'income') income += e.amount;
+    else                     expense += e.amount;
+  });
+  return { income, expense, balance: income - expense };
+}
+
+function compactYen(n) {
+  if (n < 1000)  return `¥${n}`;
+  if (n < 10000) return `¥${(n / 1000).toFixed(1)}k`;
+  return `¥${Math.round(n / 1000)}k`;
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// ─── Calendar ────────────────────────────────────────────────
+function renderCalendar() {
+  const y = state.year, m = state.month;
+
+  document.getElementById('monthLabel').textContent = `${y}年${m + 1}月`;
+
+  const summary = calcSummary(getMonthEntries());
+  document.getElementById('hdrIncome').textContent  = yen(summary.income);
+  document.getElementById('hdrExpense').textContent = yen(summary.expense);
+  document.getElementById('hdrBalance').textContent = yenSigned(summary.balance);
+
+  const cells    = document.getElementById('calendarCells');
+  cells.innerHTML = '';
+
+  const firstDow  = new Date(y, m, 1).getDay();       // 0=Sun
+  const lastDate  = new Date(y, m + 1, 0).getDate();
+  const prevLast  = new Date(y, m, 0).getDate();
+  const today     = todayStr();
+
+  // Prev-month fillers
+  for (let i = 0; i < firstDow; i++) {
+    const d  = prevLast - firstDow + 1 + i;
+    const py = m === 0 ? y - 1 : y;
+    const pm = m === 0 ? 11 : m - 1;
+    cells.appendChild(makeCell(py, pm, d, dateStr(py, pm, d), true, today));
+  }
+
+  // Current month
+  for (let d = 1; d <= lastDate; d++) {
+    cells.appendChild(makeCell(y, m, d, dateStr(y, m, d), false, today));
+  }
+
+  // Next-month fillers
+  const used = firstDow + lastDate;
+  const fill = (7 - (used % 7)) % 7;
+  for (let d = 1; d <= fill; d++) {
+    const ny = m === 11 ? y + 1 : y;
+    const nm = m === 11 ? 0 : m + 1;
+    cells.appendChild(makeCell(ny, nm, d, dateStr(ny, nm, d), true, today));
+  }
+}
+
+function makeCell(y, m, d, ds, isOther, today) {
+  const dow = new Date(ds).getDay(); // 0=Sun,6=Sat
+
+  const el = document.createElement('div');
+  el.className = 'cal-cell' + (isOther ? ' other-month' : '');
+  if (ds === today)              el.classList.add('today');
+  if (ds === state.selectedDate) el.classList.add('selected');
+  el.dataset.date = ds;
+
+  // Day number
+  const dn = document.createElement('div');
+  dn.className = 'day-num';
+  dn.textContent = d;
+  if (!isOther) {
+    if (dow === 0) dn.style.color = '#e05252';
+    else if (dow === 6) dn.style.color = '#5085e0';
+  }
+  el.appendChild(dn);
+
+  // Amounts
+  const dayEntries = getDayEntries(ds);
+  const exp = dayEntries.filter(e => e.type === 'expense').reduce((s, e) => s + e.amount, 0);
+  const inc = dayEntries.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
+  const expCnt = dayEntries.filter(e => e.type === 'expense').length;
+  const incCnt = dayEntries.filter(e => e.type === 'income').length;
+
+  if (exp > 0) {
+    const span = document.createElement('span');
+    span.className = 'cal-amount expense';
+    span.textContent = `-${compactYen(exp)}`;
+    el.appendChild(span);
+  }
+  if (inc > 0) {
+    const span = document.createElement('span');
+    span.className = 'cal-amount income';
+    span.textContent = `+${compactYen(inc)}`;
+    el.appendChild(span);
+  }
+
+  el.addEventListener('click', () => selectDay(ds));
+  return el;
+}
+
+function selectDay(ds) {
+  state.selectedDate = ds;
+  renderCalendar();
+  renderDayDetail();
+}
+
+// ─── Day detail ───────────────────────────────────────────────
+function renderDayDetail() {
+  const detail = document.getElementById('dayDetail');
+  if (!state.selectedDate) { detail.classList.remove('active'); return; }
+
+  detail.classList.add('active');
+
+  const [yy, mm, dd] = state.selectedDate.split('-').map(Number);
+  document.getElementById('dayDetailTitle').textContent = `${mm}月${dd}日の収支`;
+
+  const entries = getDayEntries(state.selectedDate);
+  const list    = document.getElementById('entryList');
+  list.innerHTML = '';
+
+  if (!entries.length) {
+    list.innerHTML = '<div class="empty-state">まだ記録がありません 💭</div>';
+    return;
+  }
+
+  entries.forEach(entry => {
+    const icon = CAT_ICONS[entry.cat] || '📦';
+    const el = document.createElement('div');
+    el.className = 'entry-item';
+    el.innerHTML = `
+      <div class="entry-left">
+        <div class="entry-icon ${entry.type}">${icon}</div>
+        <div class="entry-info">
+          <div class="e-name">${escHtml(entry.name)}</div>
+          <div class="e-meta">${escHtml(entry.cat)}</div>
+        </div>
+      </div>
+      <div class="entry-right">
+        <span class="entry-amount ${entry.type}">
+          ${entry.type === 'expense' ? '-' : '+'}${yen(entry.amount)}
+        </span>
+        <span class="entry-who">${escHtml(entry.who)}</span>
+      </div>
+      <button class="btn-delete" data-id="${escHtml(entry.id)}" title="削除">✕</button>
+    `;
+    el.querySelector('.btn-delete').addEventListener('click', ev => {
+      ev.stopPropagation();
+      deleteEntry(entry.id);
+    });
+    list.appendChild(el);
+  });
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Entry CRUD ───────────────────────────────────────────────
+function submitEntry() {
+  const amount = parseInt(document.getElementById('inputAmount').value, 10);
+  const name   = document.getElementById('inputName').value.trim();
+  const cat    = document.getElementById('inputCat').value;
+  const date   = document.getElementById('inputDate').value;
+
+  if (!amount || amount <= 0) { showToast('金額を入力してください'); return; }
+  if (!date)                  { showToast('日付を選択してください'); return; }
+
+  const who = state.settings.names[state.sheetWho] || `人${state.sheetWho + 1}`;
+
+  state.entries.push({
+    id:     uid(),
+    type:   state.sheetType,
+    amount,
+    name:   name || cat,
+    cat,
+    who,
+    date
+  });
+
+  saveData();
+  closeSheet();
+
+  state.selectedDate = date;
+  renderCalendar();
+  renderDayDetail();
+  showToast('記録しました 💕');
+}
+
+function deleteEntry(id) {
+  if (!confirm('この記録を削除しますか？')) return;
+  state.entries = state.entries.filter(e => e.id !== id);
+  saveData();
+  renderCalendar();
+  renderDayDetail();
+  showToast('削除しました');
+}
+
+// ─── Bottom Sheet ─────────────────────────────────────────────
+function openSheet(ds) {
+  state.sheetType = 'expense';
+  state.sheetWho  = 0;
+
+  updateTypeButtons();
+  updateWhoButtons();
+
+  document.getElementById('inputAmount').value = '';
+  document.getElementById('inputName').value   = '';
+  document.getElementById('inputCat').value    = '食費';
+  document.getElementById('inputDate').value   = ds || todayStr();
+  document.getElementById('sheetTitle').textContent = '収支を追加';
+
+  document.getElementById('overlay').classList.add('active');
+  document.getElementById('bottomSheet').classList.add('active');
+
+  setTimeout(() => document.getElementById('inputAmount').focus(), 380);
+}
+
+function closeSheet() {
+  document.getElementById('overlay').classList.remove('active');
+  document.getElementById('bottomSheet').classList.remove('active');
+}
+
+function updateTypeButtons() {
+  document.querySelectorAll('.type-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.type === state.sheetType);
+  });
+}
+
+function updateWhoButtons() {
+  const names = state.settings.names;
+  document.querySelectorAll('.who-btn').forEach(btn => {
+    const idx = parseInt(btn.dataset.who, 10);
+    btn.textContent = names[idx] || `人${idx + 1}`;
+    btn.classList.toggle('active', idx === state.sheetWho);
+  });
+}
+
+// ─── Stats ────────────────────────────────────────────────────
+function renderStats() {
+  const entries  = getMonthEntries();
+  const summary  = calcSummary(entries);
+  const budget   = state.settings.budget || 0;
+
+  document.getElementById('statsIncome').textContent  = yen(summary.income);
+  document.getElementById('statsExpense').textContent = yen(summary.expense);
+  document.getElementById('statsBalance').textContent = yenSigned(summary.balance);
+
+  const pct = budget > 0 ? Math.min(100, Math.round(summary.expense / budget * 100)) : 0;
+  document.getElementById('budgetUsed').textContent    = yen(summary.expense) + ' 使用';
+  document.getElementById('budgetTotal').textContent   = '予算 ' + yen(budget);
+  document.getElementById('budgetPercent').textContent = pct + '%';
+
+  const fill = document.getElementById('budgetBarFill');
+  fill.style.width = pct + '%';
+  fill.style.background =
+    pct >= 90 ? 'linear-gradient(90deg,#c0392b,#e74c3c)' :
+    pct >= 70 ? 'linear-gradient(90deg,#e67e22,#f39c12)' :
+                'linear-gradient(90deg,var(--pink-dark),var(--pink))';
+
+  // Category chart
+  const expEntries = entries.filter(e => e.type === 'expense');
+  const catMap = {};
+  expEntries.forEach(e => { catMap[e.cat] = (catMap[e.cat] || 0) + e.amount; });
+  const sorted = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+
+  const canvas = document.getElementById('categoryChart');
+  const ctx    = canvas.getContext('2d');
+
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+
+  if (!sorted.length) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font      = '13px sans-serif';
+    ctx.fillStyle = '#aaa';
+    ctx.textAlign = 'center';
+    ctx.fillText('支出データがありません', canvas.width / 2, 90);
+    return;
+  }
+
+  const labels = sorted.map(([k]) => (CAT_ICONS[k] || '') + ' ' + k);
+  const values = sorted.map(([, v]) => v);
+  const colors = [
+    '#ff8fab','#e86fa0','#ffb3c6','#ffd6e7','#ff6b9d',
+    '#4db6ac','#80cbc4','#f48fb1','#ce93d8','#90caf9','#ffe082'
+  ];
+
+  chartInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors.slice(0, values.length),
+        borderRadius: 8,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: { label: c => ' ' + yen(c.parsed.x) }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            callback: v => v >= 1000 ? `¥${Math.round(v/1000)}k` : `¥${v}`,
+            font: { size: 10 }
+          },
+          grid: { color: 'rgba(0,0,0,.05)' }
+        },
+        y: {
+          ticks: { font: { size: 11 } },
+          grid: { display: false }
+        }
+      }
+    }
+  });
+}
+
+// ─── Settings ─────────────────────────────────────────────────
+function renderSettings() {
+  const { names, budget } = state.settings;
+  document.getElementById('settingName1').value  = names[0] || '';
+  document.getElementById('settingName2').value  = names[1] || '';
+  document.getElementById('settingBudget').value = budget  || '';
+}
+
+// ─── Tab ──────────────────────────────────────────────────────
+const TAB_TITLES = {
+  calendar: '',
+  stats:    '📊 統計',
+  settings: '⚙️ 設定'
+};
+
+function switchTab(tab) {
+  state.tab = tab;
+
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+
+  const mainHdr = document.getElementById('mainHeader');
+  const subHdr  = document.getElementById('subHeader');
+
+  if (tab === 'calendar') {
+    mainHdr.style.display = 'block';
+    subHdr.style.display  = 'none';
+  } else {
+    mainHdr.style.display = 'none';
+    subHdr.style.display  = 'block';
+    subHdr.textContent    = TAB_TITLES[tab];
+  }
+
+  if (tab === 'stats')    renderStats();
+  if (tab === 'settings') renderSettings();
+}
+
+// ─── Event listeners ──────────────────────────────────────────
+document.getElementById('prevMonth').addEventListener('click', () => {
+  if (--state.month < 0) { state.month = 11; state.year--; }
+  state.selectedDate = null;
+  document.getElementById('dayDetail').classList.remove('active');
+  renderCalendar();
+});
+
+document.getElementById('nextMonth').addEventListener('click', () => {
+  if (++state.month > 11) { state.month = 0; state.year++; }
+  state.selectedDate = null;
+  document.getElementById('dayDetail').classList.remove('active');
+  renderCalendar();
+});
+
+document.querySelectorAll('.nav-item').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+document.getElementById('btnAddEntry').addEventListener('click', () => {
+  openSheet(state.selectedDate);
+});
+
+document.getElementById('overlay').addEventListener('click', closeSheet);
+
+document.querySelectorAll('.type-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.sheetType = btn.dataset.type;
+    updateTypeButtons();
+  });
+});
+
+document.getElementById('whoBtns').addEventListener('click', e => {
+  const btn = e.target.closest('.who-btn');
+  if (!btn) return;
+  state.sheetWho = parseInt(btn.dataset.who, 10);
+  updateWhoButtons();
+});
+
+document.getElementById('btnSubmit').addEventListener('click', submitEntry);
+
+// Enter key submits
+document.getElementById('bottomSheet').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.tagName !== 'SELECT') submitEntry();
+});
+
+document.getElementById('saveNames').addEventListener('click', () => {
+  const n1 = document.getElementById('settingName1').value.trim();
+  const n2 = document.getElementById('settingName2').value.trim();
+  if (!n1 || !n2) { showToast('名前を両方入力してください'); return; }
+  state.settings.names = [n1, n2];
+  saveData();
+  showToast('名前を保存しました 💕');
+  updateWhoButtons();
+});
+
+document.getElementById('saveBudget').addEventListener('click', () => {
+  const b = parseInt(document.getElementById('settingBudget').value, 10);
+  if (!b || b <= 0) { showToast('予算を入力してください'); return; }
+  state.settings.budget = b;
+  saveData();
+  showToast('予算を保存しました 💰');
+});
+
+document.getElementById('btnExportData').addEventListener('click', () => {
+  const json = JSON.stringify({ entries: state.entries, settings: state.settings }, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `kakeibo_${todayStr()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('エクスポートしました');
+});
+
+document.getElementById('btnClearData').addEventListener('click', () => {
+  if (!confirm('すべてのデータを削除しますか？\nこの操作は取り消せません。')) return;
+  state.entries = [];
+  state.selectedDate = null;
+  saveData();
+  renderCalendar();
+  document.getElementById('dayDetail').classList.remove('active');
+  showToast('データを削除しました');
+});
+
+// ─── PWA: アイコン生成 & マニフェスト登録 ────────────────────
+function setupPWA() {
+  // Canvas でピンクのアプリアイコンを生成
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  // 角丸ピンクグラデーション背景
+  const grad = ctx.createLinearGradient(0, 0, size, size);
+  grad.addColorStop(0, '#d45d8a');
+  grad.addColorStop(1, '#ff8fab');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.roundRect(0, 0, size, size, 90);
+  ctx.fill();
+
+  // ハートの絵文字を中央に描画
+  ctx.font = '300px serif';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('💕', size / 2, size / 2 + 10);
+
+  const iconDataUrl = canvas.toDataURL('image/png');
+
+  // apple-touch-icon にセット（iOS ホーム画面アイコン）
+  document.getElementById('appleIcon').href = iconDataUrl;
+
+  // Web App Manifest を Blob で生成してセット（Android Chrome 対応）
+  const manifest = {
+    name:             'ふたりの家計簿',
+    short_name:       '家計簿',
+    description:      '夫婦で共有できるカレンダー家計簿',
+    start_url:        '.',
+    display:          'standalone',
+    background_color: '#fff5f8',
+    theme_color:      '#e86fa0',
+    icons: [
+      { src: iconDataUrl, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+    ]
+  };
+
+  const blob       = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+  const manifestEl = document.createElement('link');
+  manifestEl.rel   = 'manifest';
+  manifestEl.href  = URL.createObjectURL(blob);
+  document.head.appendChild(manifestEl);
+}
+
+// ─── Init ─────────────────────────────────────────────────────
+loadData();
+renderCalendar();
+setupPWA();
+</script>
+</body>
+</html>
